@@ -16,7 +16,9 @@ from .api.variables import VariableManager
 from .api.documents import DocumentManager
 from .builders.sketch import SketchBuilder, SketchPlane
 from .builders.extrude import ExtrudeBuilder, ExtrudeType
+from .builders.stepped_extrude import SteppedExtrudeBuilder
 from .builders.thicken import ThickenBuilder, ThickenType
+from .builders.fillet import FilletBuilder, FilletType
 
 # Configure loguru to output to stderr
 logger.remove()  # Remove default handler
@@ -44,6 +46,85 @@ document_manager = DocumentManager(client)
 async def list_tools() -> list[Tool]:
     """List available MCP tools."""
     return [
+        Tool(
+            name="create_sketch",
+            description="Create a sketch with multiple entities (lines, circles, rectangles) in ONE sketch",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "documentId": {"type": "string", "description": "Document ID"},
+                    "workspaceId": {"type": "string", "description": "Workspace ID"},
+                    "elementId": {"type": "string", "description": "Part Studio element ID"},
+                    "name": {"type": "string", "description": "Sketch name", "default": "Sketch"},
+                    "plane": {
+                        "type": "string",
+                        "enum": ["Front", "Top", "Right"],
+                        "description": "Sketch plane",
+                        "default": "Front",
+                    },
+                    "entities": {
+                        "type": "array",
+                        "description": "Array of entities to add to the sketch",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": ["line", "circle", "rectangle"],
+                                    "description": "Type of entity",
+                                },
+                                "start": {
+                                    "type": "array",
+                                    "items": {"type": "number"},
+                                    "minItems": 2,
+                                    "maxItems": 2,
+                                    "description": "For line: start point [x, y] in inches",
+                                },
+                                "end": {
+                                    "type": "array",
+                                    "items": {"type": "number"},
+                                    "minItems": 2,
+                                    "maxItems": 2,
+                                    "description": "For line: end point [x, y] in inches",
+                                },
+                                "center": {
+                                    "type": "array",
+                                    "items": {"type": "number"},
+                                    "minItems": 2,
+                                    "maxItems": 2,
+                                    "description": "For circle: center point [x, y] in inches",
+                                },
+                                "radius": {
+                                    "type": "number",
+                                    "description": "For circle: radius in inches",
+                                },
+                                "corner1": {
+                                    "type": "array",
+                                    "items": {"type": "number"},
+                                    "minItems": 2,
+                                    "maxItems": 2,
+                                    "description": "For rectangle: first corner [x, y] in inches",
+                                },
+                                "corner2": {
+                                    "type": "array",
+                                    "items": {"type": "number"},
+                                    "minItems": 2,
+                                    "maxItems": 2,
+                                    "description": "For rectangle: second corner [x, y] in inches",
+                                },
+                                "isConstruction": {
+                                    "type": "boolean",
+                                    "description": "Whether this is a construction entity",
+                                    "default": False,
+                                },
+                            },
+                            "required": ["type"],
+                        },
+                    },
+                },
+                "required": ["documentId", "workspaceId", "elementId", "entities"],
+            },
+        ),
         Tool(
             name="create_sketch_rectangle",
             description="Create a rectangular sketch in a Part Studio with optional variable references",
@@ -87,6 +168,135 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="create_sketch_line",
+            description="Create a line segment in a Part Studio sketch",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "documentId": {"type": "string", "description": "Document ID"},
+                    "workspaceId": {"type": "string", "description": "Workspace ID"},
+                    "elementId": {"type": "string", "description": "Part Studio element ID"},
+                    "name": {"type": "string", "description": "Sketch name", "default": "Sketch"},
+                    "plane": {
+                        "type": "string",
+                        "enum": ["Front", "Top", "Right"],
+                        "description": "Sketch plane",
+                        "default": "Front",
+                    },
+                    "start": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "description": "Start point [x, y] in inches",
+                    },
+                    "end": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "description": "End point [x, y] in inches",
+                    },
+                    "isConstruction": {
+                        "type": "boolean",
+                        "description": "Whether this is a construction line",
+                        "default": False,
+                    },
+                },
+                "required": ["documentId", "workspaceId", "elementId", "start", "end"],
+            },
+        ),
+        Tool(
+            name="create_sketch_circle",
+            description="Create a circle in a Part Studio sketch",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "documentId": {"type": "string", "description": "Document ID"},
+                    "workspaceId": {"type": "string", "description": "Workspace ID"},
+                    "elementId": {"type": "string", "description": "Part Studio element ID"},
+                    "name": {"type": "string", "description": "Sketch name", "default": "Sketch"},
+                    "plane": {
+                        "type": "string",
+                        "enum": ["Front", "Top", "Right"],
+                        "description": "Sketch plane",
+                        "default": "Front",
+                    },
+                    "center": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "description": "Center point [x, y] in inches",
+                    },
+                    "radius": {
+                        "type": "number",
+                        "description": "Radius in inches",
+                    },
+                    "isConstruction": {
+                        "type": "boolean",
+                        "description": "Whether this is a construction circle",
+                        "default": False,
+                    },
+                    "variableRadius": {
+                        "type": "string",
+                        "description": "Optional variable name for radius",
+                    },
+                },
+                "required": ["documentId", "workspaceId", "elementId", "center", "radius"],
+            },
+        ),
+        Tool(
+            name="create_hole",
+            description="Create a hole (extrude remove operation) from a sketch",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "documentId": {"type": "string", "description": "Document ID"},
+                    "workspaceId": {"type": "string", "description": "Workspace ID"},
+                    "elementId": {"type": "string", "description": "Part Studio element ID"},
+                    "name": {"type": "string", "description": "Hole name", "default": "Hole"},
+                    "sketchFeatureId": {"type": "string", "description": "ID of sketch to extrude"},
+                    "depth": {"type": "number", "description": "Hole depth in inches"},
+                    "variableDepth": {
+                        "type": "string",
+                        "description": "Optional variable name for depth",
+                    },
+                },
+                "required": ["documentId", "workspaceId", "elementId", "sketchFeatureId", "depth"],
+            },
+        ),
+        Tool(
+            name="create_fillet",
+            description="Create a fillet on edges of a part",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "documentId": {"type": "string", "description": "Document ID"},
+                    "workspaceId": {"type": "string", "description": "Workspace ID"},
+                    "elementId": {"type": "string", "description": "Part Studio element ID"},
+                    "name": {"type": "string", "description": "Fillet name", "default": "Fillet"},
+                    "edgeIds": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of edge deterministic IDs to fillet",
+                    },
+                    "radius": {"type": "number", "description": "Fillet radius in inches"},
+                    "variableRadius": {
+                        "type": "string",
+                        "description": "Optional variable name for radius",
+                    },
+                    "filletType": {
+                        "type": "string",
+                        "enum": ["EDGE", "FACE", "FULL_ROUND"],
+                        "description": "Type of fillet",
+                        "default": "EDGE",
+                    },
+                },
+                "required": ["documentId", "workspaceId", "elementId", "edgeIds", "radius"],
+            },
+        ),
+        Tool(
             name="create_extrude",
             description="Create an extrude feature from a sketch",
             inputSchema={
@@ -110,6 +320,49 @@ async def list_tools() -> list[Tool]:
                     },
                 },
                 "required": ["documentId", "workspaceId", "elementId", "sketchFeatureId", "depth"],
+            },
+        ),
+        Tool(
+            name="create_stepped_extrude",
+            description="Create a counterbore hole with multiple diameter steps. Each step removes material with a specific radius to a specific depth, creating a stepped hole (largest diameter at top, smallest at bottom).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "documentId": {"type": "string", "description": "Document ID"},
+                    "workspaceId": {"type": "string", "description": "Workspace ID"},
+                    "elementId": {"type": "string", "description": "Part Studio element ID"},
+                    "namePrefix": {
+                        "type": "string",
+                        "description": "Prefix for step names (will add step numbers)",
+                        "default": "Counterbore",
+                    },
+                    "center": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "Center point [x, y] in inches",
+                        "minItems": 2,
+                        "maxItems": 2,
+                    },
+                    "radii": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "Array of radii in inches, largest to smallest (e.g., [0.5, 0.375, 0.25] for counterbore)",
+                        "minItems": 2,
+                    },
+                    "depths": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "Array of cumulative depths in inches (e.g., [0.7874, 1.5748, 2.362] for 2cm, 4cm, 6cm steps)",
+                        "minItems": 2,
+                    },
+                    "plane": {
+                        "type": "string",
+                        "enum": ["Front", "Top", "Right"],
+                        "description": "Sketch plane",
+                        "default": "Top",
+                    },
+                },
+                "required": ["documentId", "workspaceId", "elementId", "center", "radii", "depths"],
             },
         ),
         Tool(
@@ -337,7 +590,74 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     """Handle tool calls."""
 
-    if name == "create_sketch_rectangle":
+    if name == "create_sketch":
+        try:
+            # Get the plane name and resolve its ID
+            plane_name = arguments.get("plane", "Front")
+            plane = SketchPlane[plane_name.upper()]
+
+            # Resolve the plane ID from Onshape
+            plane_id = await partstudio_manager.get_plane_id(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                plane_name,
+            )
+
+            # Build sketch with multiple entities
+            sketch = SketchBuilder(
+                name=arguments.get("name", "Sketch"), plane=plane, plane_id=plane_id
+            )
+
+            # Add each entity to the sketch
+            for entity in arguments.get("entities", []):
+                entity_type = entity.get("type")
+
+                if entity_type == "line":
+                    sketch.add_line(
+                        start=tuple(entity["start"]),
+                        end=tuple(entity["end"]),
+                        is_construction=entity.get("isConstruction", False),
+                    )
+                elif entity_type == "circle":
+                    sketch.add_circle(
+                        center=tuple(entity["center"]),
+                        radius=entity["radius"],
+                        is_construction=entity.get("isConstruction", False),
+                    )
+                elif entity_type == "rectangle":
+                    sketch.add_rectangle(
+                        corner1=tuple(entity["corner1"]),
+                        corner2=tuple(entity["corner2"]),
+                    )
+
+            # Add feature to Part Studio
+            feature_data = sketch.build()
+            result = await partstudio_manager.add_feature(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                feature_data,
+            )
+
+            feature_id = result.get("feature", {}).get("featureId", "unknown")
+            entity_count = len(arguments.get("entities", []))
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Created sketch '{arguments.get('name', 'Sketch')}' with {entity_count} entities on {plane_name} plane. Feature ID: {feature_id}",
+                )
+            ]
+
+        except Exception as e:
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error creating sketch: {str(e)}\n\nPlease check the document/workspace/element IDs and entity data.",
+                )
+            ]
+
+    elif name == "create_sketch_rectangle":
         try:
             # Get the plane name and resolve its ID
             plane_name = arguments.get("plane", "Front")
@@ -385,6 +705,208 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                 TextContent(
                     type="text",
                     text=f"Error creating sketch: {str(e)}\n\nPlease check the document/workspace/element IDs and try again.",
+                )
+            ]
+
+    elif name == "create_sketch_line":
+        try:
+            # Get the plane name and resolve its ID
+            plane_name = arguments.get("plane", "Front")
+            plane = SketchPlane[plane_name.upper()]
+
+            # Resolve the plane ID from Onshape
+            plane_id = await partstudio_manager.get_plane_id(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                plane_name,
+            )
+
+            # Build sketch with line
+            sketch = SketchBuilder(
+                name=arguments.get("name", "Sketch"), plane=plane, plane_id=plane_id
+            )
+
+            sketch.add_line(
+                start=tuple(arguments["start"]),
+                end=tuple(arguments["end"]),
+                is_construction=arguments.get("isConstruction", False),
+            )
+
+            # Add feature to Part Studio
+            feature_data = sketch.build()
+            result = await partstudio_manager.add_feature(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                feature_data,
+            )
+
+            feature_id = result.get("feature", {}).get("featureId", "unknown")
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Created sketch '{arguments.get('name', 'Sketch')}' with line on {plane_name} plane. Feature ID: {feature_id}",
+                )
+            ]
+
+        except Exception as e:
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error creating sketch line: {str(e)}\n\nPlease check the document/workspace/element IDs and try again.",
+                )
+            ]
+
+    elif name == "create_sketch_circle":
+        try:
+            # Get the plane name and resolve its ID
+            plane_name = arguments.get("plane", "Front")
+            plane = SketchPlane[plane_name.upper()]
+
+            # Resolve the plane ID from Onshape
+            plane_id = await partstudio_manager.get_plane_id(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                plane_name,
+            )
+
+            # Build sketch with circle
+            sketch = SketchBuilder(
+                name=arguments.get("name", "Sketch"), plane=plane, plane_id=plane_id
+            )
+
+            sketch.add_circle(
+                center=tuple(arguments["center"]),
+                radius=arguments["radius"],
+                is_construction=arguments.get("isConstruction", False),
+                variable_radius=arguments.get("variableRadius"),
+            )
+
+            # Add feature to Part Studio
+            feature_data = sketch.build()
+            result = await partstudio_manager.add_feature(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                feature_data,
+            )
+
+            feature_id = result.get("feature", {}).get("featureId", "unknown")
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Created sketch '{arguments.get('name', 'Sketch')}' with circle on {plane_name} plane. Feature ID: {feature_id}",
+                )
+            ]
+
+        except Exception as e:
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error creating sketch circle: {str(e)}\n\nPlease check the document/workspace/element IDs and try again.",
+                )
+            ]
+
+    elif name == "create_hole":
+        try:
+            # Build extrude with REMOVE operation
+            extrude = ExtrudeBuilder(
+                name=arguments.get("name", "Hole"),
+                sketch_feature_id=arguments["sketchFeatureId"],
+                operation_type=ExtrudeType.REMOVE,
+            )
+
+            extrude.set_depth(arguments["depth"], variable_name=arguments.get("variableDepth"))
+
+            # Add feature to Part Studio
+            feature_data = extrude.build()
+            result = await partstudio_manager.add_feature(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                feature_data,
+            )
+
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Created hole '{arguments.get('name', 'Hole')}'. Feature ID: {result.get('featureId', 'unknown')}",
+                )
+            ]
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"API error creating hole: {e.response.status_code} - {e.response.text[:500]}"
+            )
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error creating hole: API returned {e.response.status_code}. Check that the sketch feature ID is valid and parameters are correct.",
+                )
+            ]
+        except Exception as e:
+            logger.exception("Unexpected error creating hole")
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error creating hole: {str(e)}\n\nPlease check the parameters and try again.",
+                )
+            ]
+
+    elif name == "create_fillet":
+        try:
+            # Build fillet
+            fillet_type = FilletType[arguments.get("filletType", "EDGE")]
+            fillet = FilletBuilder(
+                name=arguments.get("name", "Fillet"),
+                radius=arguments["radius"],
+                fillet_type=fillet_type,
+            )
+
+            fillet.set_edges(arguments["edgeIds"])
+
+            if arguments.get("variableRadius"):
+                fillet.set_radius(arguments["radius"], variable_name=arguments["variableRadius"])
+
+            # Add feature to Part Studio
+            feature_data = fillet.build()
+            result = await partstudio_manager.add_feature(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                feature_data,
+            )
+
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Created fillet '{arguments.get('name', 'Fillet')}'. Feature ID: {result.get('featureId', 'unknown')}",
+                )
+            ]
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"API error creating fillet: {e.response.status_code} - {e.response.text[:500]}"
+            )
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error creating fillet: API returned {e.response.status_code}. Check that the edge IDs are valid and parameters are correct.",
+                )
+            ]
+        except KeyError:
+            return [
+                TextContent(
+                    type="text",
+                    text="Error creating fillet: Invalid fillet type. Must be one of: EDGE, FACE, FULL_ROUND.",
+                )
+            ]
+        except Exception as e:
+            logger.exception("Unexpected error creating fillet")
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error creating fillet: {str(e)}\n\nPlease check the parameters and try again.",
                 )
             ]
 
@@ -445,6 +967,89 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                 TextContent(
                     type="text",
                     text=f"Error creating extrude: {str(e)}\n\nPlease check the parameters and try again.",
+                )
+            ]
+
+    elif name == "create_stepped_extrude":
+        try:
+            # Build stepped extrude (counterbore hole)
+            stepped_extrude = SteppedExtrudeBuilder(
+                name_prefix=arguments.get("namePrefix", "Counterbore"),
+                center=tuple(arguments["center"]),
+                radii=arguments["radii"],
+                depths=arguments["depths"],
+                plane=arguments.get("plane", "Top"),
+            )
+
+            # Build all features (alternating sketches and extrudes)
+            features = stepped_extrude.build_all_features()
+
+            # Add features sequentially, tracking sketch IDs
+            feature_ids = []
+            sketch_ids = []
+
+            for i, feature_data in enumerate(features):
+                # Check if this is a sketch or extrude
+                is_sketch = feature_data.get("feature", {}).get("featureType") == "sketch"
+
+                # If it's an extrude, replace the placeholder sketch ID
+                if not is_sketch and sketch_ids:
+                    sketch_id = sketch_ids[-1]
+                    placeholder = f"{{SKETCH_{len(sketch_ids)-1}}}"
+                    # Replace placeholder in the queries
+                    params = feature_data["feature"]["parameters"]
+                    for param in params:
+                        if param.get("parameterId") == "entities":
+                            for query in param.get("queries", []):
+                                if "queryString" in query:
+                                    query["queryString"] = query["queryString"].replace(placeholder, sketch_id)
+                                if "featureId" in query:
+                                    query["featureId"] = query["featureId"].replace(placeholder, sketch_id)
+
+                result = await partstudio_manager.add_feature(
+                    arguments["documentId"],
+                    arguments["workspaceId"],
+                    arguments["elementId"],
+                    feature_data,
+                )
+
+                feature_id = result.get("featureId", "unknown")
+                feature_ids.append(feature_id)
+
+                # If this was a sketch, save its ID
+                if is_sketch:
+                    sketch_ids.append(feature_id)
+
+            num_steps = len(arguments["radii"])
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Created counterbore hole with {num_steps} steps. Feature IDs: {', '.join(feature_ids)}",
+                )
+            ]
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"API error creating stepped extrude: {e.response.status_code} - {e.response.text[:500]}"
+            )
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error creating counterbore hole: API returned {e.response.status_code}. Check that the parameters are correct.",
+                )
+            ]
+        except ValueError as e:
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error creating counterbore hole: {str(e)}",
+                )
+            ]
+        except Exception as e:
+            logger.exception("Unexpected error creating stepped extrude")
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error creating stepped extrude: {str(e)}\n\nPlease check the parameters and try again.",
                 )
             ]
 

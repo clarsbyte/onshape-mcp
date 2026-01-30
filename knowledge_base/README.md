@@ -109,6 +109,14 @@ Refer to these resources when:
 - Common patterns and best practices
 - Standard plane IDs and queries
 
+**stepped_extrude_api.md**
+- Counterbore hole creation API
+- Multiple diameter stepped holes
+- Usage examples and patterns
+- Unit conversions and error handling
+- Design considerations and best practices
+- Comparison with manual methods
+
 **What It Covers:**
 - ✅ All major API endpoints
 - ✅ JSON structure for features
@@ -116,6 +124,7 @@ Refer to these resources when:
 - ✅ Query types and references
 - ✅ Common patterns
 - ✅ Error handling
+- ✅ Specialized tools (counterbore holes)
 
 ### `/cad` - CAD Principles
 
@@ -132,6 +141,15 @@ Refer to these resources when:
 - Assembly best practices
 - Common mistakes to avoid
 
+**counterbore_holes.md**
+- Counterbore hole anatomy and purpose
+- Standard fastener counterbore dimensions
+- Creating counterbores with stepped extrude
+- Best practices for clearances and depths
+- Common mistakes and how to avoid them
+- Real-world examples (M3, M6, M8, bearings, etc.)
+- Testing and validation methods
+
 **What It Covers:**
 - ✅ Professional CAD workflows
 - ✅ Parametric modeling techniques
@@ -139,6 +157,7 @@ Refer to these resources when:
 - ✅ Manufacturing considerations
 - ✅ Material-specific guidelines
 - ✅ Quality checklists
+- ✅ Specialized features (counterbore holes)
 
 ### `/examples` - Real Designs
 

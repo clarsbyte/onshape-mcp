@@ -358,6 +358,147 @@ class SketchBuilder:
 
         return self
 
+    def add_line(
+        self,
+        start: Tuple[float, float],
+        end: Tuple[float, float],
+        is_construction: bool = False,
+    ) -> "SketchBuilder":
+        """Add a line segment to the sketch.
+
+        Args:
+            start: Start point (x, y) in inches
+            end: End point (x, y) in inches
+            is_construction: Whether this is a construction line
+
+        Returns:
+            Self for chaining
+        """
+        x1, y1 = start
+        x2, y2 = end
+
+        # Convert inches to meters for Onshape API
+        def to_meters(inches: float) -> float:
+            return inches * 0.0254
+
+        x1_m, y1_m = to_meters(x1), to_meters(y1)
+        x2_m, y2_m = to_meters(x2), to_meters(y2)
+
+        # Calculate direction and length
+        dx = x2_m - x1_m
+        dy = y2_m - y1_m
+        length = (dx**2 + dy**2) ** 0.5
+
+        # Normalize direction
+        if length > 0:
+            dir_x = dx / length
+            dir_y = dy / length
+        else:
+            dir_x, dir_y = 1.0, 0.0
+
+        # Generate unique IDs
+        line_id = self._generate_entity_id("line")
+        start_id = f"{line_id}.start"
+        end_id = f"{line_id}.end"
+
+        # Create line entity
+        self.entities.append(
+            {
+                "btType": "BTMSketchCurveSegment-155",
+                "entityId": line_id,
+                "startPointId": start_id,
+                "endPointId": end_id,
+                "startParam": 0.0,
+                "endParam": length,
+                "geometry": {
+                    "btType": "BTCurveGeometryLine-117",
+                    "pntX": x1_m,
+                    "pntY": y1_m,
+                    "dirX": dir_x,
+                    "dirY": dir_y,
+                },
+                "isConstruction": is_construction,
+            }
+        )
+
+        return self
+
+    def add_circle(
+        self,
+        center: Tuple[float, float],
+        radius: float,
+        is_construction: bool = False,
+        variable_radius: Optional[str] = None,
+    ) -> "SketchBuilder":
+        """Add a circle to the sketch.
+
+        Args:
+            center: Center point (x, y) in inches
+            radius: Radius in inches
+            is_construction: Whether this is a construction circle
+            variable_radius: Optional variable name for radius
+
+        Returns:
+            Self for chaining
+        """
+        x_center, y_center = center
+
+        # Convert inches to meters for Onshape API
+        def to_meters(inches: float) -> float:
+            return inches * 0.0254
+
+        x_center_m = to_meters(x_center)
+        y_center_m = to_meters(y_center)
+        radius_m = to_meters(radius)
+
+        # Generate unique IDs
+        circle_id = self._generate_entity_id("circle")
+        center_id = f"{circle_id}.center"
+
+        # Create circle entity
+        self.entities.append(
+            {
+                "btType": "BTMSketchCurve-4",
+                "entityId": circle_id,
+                "centerId": center_id,
+                "geometry": {
+                    "btType": "BTCurveGeometryCircle-115",
+                    "radius": radius_m,
+                    "xCenter": x_center_m,
+                    "yCenter": y_center_m,
+                    "xDir": 1.0,
+                    "yDir": 0.0,
+                    "clockwise": False,
+                },
+                "isConstruction": is_construction,
+            }
+        )
+
+        # Add radius constraint if variable is specified
+        if variable_radius:
+            self.constraints.append(
+                {
+                    "btType": "BTMSketchConstraint-2",
+                    "constraintType": "RADIUS",
+                    "entityId": f"{circle_id}.radius_constraint",
+                    "parameters": [
+                        {
+                            "btType": "BTMParameterString-149",
+                            "value": circle_id,
+                            "parameterId": "localFirst",
+                        },
+                        {
+                            "btType": "BTMParameterQuantity-147",
+                            "expression": f"#{variable_radius}",
+                            "parameterId": "length",
+                            "isInteger": False,
+                        },
+                    ],
+                }
+            )
+
+        return self
+
     def build(self, plane_id: Optional[str] = None) -> Dict[str, Any]:
         """Build the sketch feature JSON in BTMSketch-151 format.
 
