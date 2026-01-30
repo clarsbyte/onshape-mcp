@@ -10,10 +10,13 @@ This MCP server provides comprehensive programmatic access to Onshape's REST API
 
 - **🔍 Document Discovery** - Search and list projects, find Part Studios, navigate workspaces
 - **📐 Parametric Sketch Creation** - Create sketches with rectangles, circles, and lines
-- **⚙️ Feature Management** - Add extrudes, manage feature trees
+- **⚙️ Feature Management** - Add extrudes, fillets, chamfers, manage feature trees
+- **🔩 Mechanical Components** - Create gears with customizable teeth count, module, and gear ratios (NEW!)
+- **🎯 Edge Query & Discovery** - Programmatically find edges by radius, type, or feature
 - **📊 Variable Tables** - Read and write Onshape variable tables for parametric designs
 - **🔧 Configuration Support** - Work with Onshape configuration parameters
 - **🗂️ Part Studio Management** - Create and manage Part Studios programmatically
+- **🤖 Full Automation** - Build complete CAD workflows without manual intervention
 
 ## Installation
 
@@ -200,6 +203,45 @@ Create an extrude feature from a sketch.
 - `variableDepth` - Optional variable name for depth
 - `operationType` - "NEW", "ADD", "REMOVE", or "INTERSECT"
 
+### create_gear
+
+Create a spur gear with specified number of teeth, module, and parameters. Perfect for mechanical assemblies and gear trains!
+
+**Parameters:**
+- `documentId` - Onshape document ID
+- `workspaceId` - Workspace ID
+- `elementId` - Part Studio element ID
+- `name` - Gear name (default: "Gear")
+- `numTeeth` - Number of teeth on the gear (required)
+- `module` - Module (tooth size) in millimeters (required). Common values: 1.0, 1.5, 2.0, 2.5, 3.0
+- `pressureAngle` - Pressure angle in degrees (default: 20.0). Standard options: 14.5, 20, 25
+- `thickness` - Gear thickness in inches (required)
+- `boreDiameter` - Center bore diameter in inches (default: 0.0 for no bore)
+- `centerX` - X coordinate of gear center in inches (default: 0.0)
+- `centerY` - Y coordinate of gear center in inches (default: 0.0)
+- `plane` - Sketch plane: "Front", "Top", or "Right" (default: "Front")
+
+**Gear Calculations:**
+- Pitch diameter = module × number of teeth (in mm)
+- Gear ratio = teeth on mating gear / teeth on this gear
+- For example: 20-tooth gear with module 2.0 has pitch diameter of 40mm (1.575 inches)
+
+**Example:**
+```python
+# Create a 24-tooth gear with 2mm module
+await create_gear(
+    doc_id, ws_id, elem_id,
+    name="Drive Gear",
+    numTeeth=24,
+    module=2.0,
+    thickness=0.5,
+    pressureAngle=20.0,
+    boreDiameter=0.25  # 1/4" bore
+)
+```
+
+**Note:** This creates a simplified circular gear profile. For full involute gear teeth, use Onshape's Gear FeatureScript from the Feature Library in the Onshape UI.
+
 ### get_variables
 
 Get all variables from a Part Studio variable table.
@@ -230,6 +272,79 @@ Get all features from a Part Studio.
 - `workspaceId` - Workspace ID
 - `elementId` - Part Studio element ID
 
+### 🎯 Edge Query Tools (NEW!)
+
+#### get_edges
+
+Get all edges from a Part Studio with geometry information.
+
+**Parameters:**
+- `documentId` - Onshape document ID
+- `workspaceId` - Workspace ID
+- `elementId` - Part Studio element ID
+
+**Returns:**
+- List of edges with IDs, geometry type (LINE, CIRCLE, etc.), and radius (for circular edges)
+
+#### find_circular_edges
+
+Find circular edges in a Part Studio, optionally filtered by radius. Perfect for finding edges to fillet on holes or curved features!
+
+**Parameters:**
+- `documentId` - Onshape document ID
+- `workspaceId` - Workspace ID
+- `elementId` - Part Studio element ID
+- `radius` - Optional radius to filter by (in inches)
+- `tolerance` - Radius match tolerance (default: 0.001 inches)
+
+**Returns:**
+- List of deterministic edge IDs matching the criteria
+
+**Example Use Case:**
+```python
+# Find edges at counterbore transition (Ø0.250 hole)
+edge_ids = await find_circular_edges(
+    doc_id, ws_id, elem_id,
+    radius=0.125,  # Ø0.250 / 2
+    tolerance=0.001
+)
+
+# Create fillet on found edges
+await create_fillet(
+    doc_id, ws_id, elem_id,
+    name="Counterbore Fillet",
+    edgeIds=edge_ids,
+    radius=0.06
+)
+```
+
+#### find_edges_by_feature
+
+Find edges created by a specific feature (like an extrude or hole).
+
+**Parameters:**
+- `documentId` - Onshape document ID
+- `workspaceId` - Workspace ID
+- `elementId` - Part Studio element ID
+- `featureId` - Feature ID to query
+
+**Returns:**
+- List of edge IDs created by the specified feature
+
+#### create_fillet
+
+Create a fillet on edges of a part.
+
+**Parameters:**
+- `documentId` - Onshape document ID
+- `workspaceId` - Workspace ID
+- `elementId` - Part Studio element ID
+- `name` - Fillet name (default: "Fillet")
+- `edgeIds` - List of edge deterministic IDs to fillet
+- `radius` - Fillet radius in inches
+- `variableRadius` - Optional variable name for radius
+- `filletType` - "EDGE", "FACE", or "FULL_ROUND" (default: "EDGE")
+
 ## Architecture
 
 ```
@@ -238,13 +353,16 @@ onshape_mcp/
 │   ├── client.py         # HTTP client with authentication
 │   ├── documents.py      # Document discovery & navigation
 │   ├── partstudio.py     # Part Studio management
-│   └── variables.py      # Variable table management
+│   ├── variables.py      # Variable table management
+│   └── edges.py          # Edge query & discovery (NEW!)
 ├── builders/
 │   ├── sketch.py         # Sketch feature builder
-│   └── extrude.py        # Extrude feature builder
+│   ├── extrude.py        # Extrude feature builder
+│   ├── fillet.py         # Fillet feature builder
+│   └── thicken.py        # Thicken feature builder
 ├── tools/
 │   └── __init__.py       # MCP tool definitions
-└── server.py             # Main MCP server (13 tools)
+└── server.py             # Main MCP server (20+ tools)
 ```
 
 ## Examples

@@ -14,11 +14,13 @@ from .api.client import OnshapeClient, OnshapeCredentials
 from .api.partstudio import PartStudioManager
 from .api.variables import VariableManager
 from .api.documents import DocumentManager
+from .api.edges import EdgeQuery
 from .builders.sketch import SketchBuilder, SketchPlane
 from .builders.extrude import ExtrudeBuilder, ExtrudeType
 from .builders.stepped_extrude import SteppedExtrudeBuilder
 from .builders.thicken import ThickenBuilder, ThickenType
 from .builders.fillet import FilletBuilder, FilletType
+from .builders.gear import GearBuilder
 
 # Configure loguru to output to stderr
 logger.remove()  # Remove default handler
@@ -40,6 +42,7 @@ client = OnshapeClient(credentials)
 partstudio_manager = PartStudioManager(client)
 variable_manager = VariableManager(client)
 document_manager = DocumentManager(client)
+edge_query = EdgeQuery(client)
 
 
 @app.list_tools()
@@ -297,6 +300,55 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="get_edges",
+            description="Get all edges from a Part Studio with geometry information",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "documentId": {"type": "string", "description": "Document ID"},
+                    "workspaceId": {"type": "string", "description": "Workspace ID"},
+                    "elementId": {"type": "string", "description": "Part Studio element ID"},
+                },
+                "required": ["documentId", "workspaceId", "elementId"],
+            },
+        ),
+        Tool(
+            name="find_circular_edges",
+            description="Find circular edges in a Part Studio, optionally filtered by radius. Useful for finding edges to fillet on holes or curved features.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "documentId": {"type": "string", "description": "Document ID"},
+                    "workspaceId": {"type": "string", "description": "Workspace ID"},
+                    "elementId": {"type": "string", "description": "Part Studio element ID"},
+                    "radius": {
+                        "type": "number",
+                        "description": "Optional radius to filter by (in inches). If not specified, returns all circular edges.",
+                    },
+                    "tolerance": {
+                        "type": "number",
+                        "description": "Radius match tolerance (in inches)",
+                        "default": 0.001,
+                    },
+                },
+                "required": ["documentId", "workspaceId", "elementId"],
+            },
+        ),
+        Tool(
+            name="find_edges_by_feature",
+            description="Find edges created by a specific feature (like an extrude or hole)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "documentId": {"type": "string", "description": "Document ID"},
+                    "workspaceId": {"type": "string", "description": "Workspace ID"},
+                    "elementId": {"type": "string", "description": "Part Studio element ID"},
+                    "featureId": {"type": "string", "description": "Feature ID to query"},
+                },
+                "required": ["documentId", "workspaceId", "elementId", "featureId"],
+            },
+        ),
+        Tool(
             name="create_extrude",
             description="Create an extrude feature from a sketch",
             inputSchema={
@@ -405,6 +457,61 @@ async def list_tools() -> list[Tool]:
                     "sketchFeatureId",
                     "thickness",
                 ],
+            },
+        ),
+        Tool(
+            name="create_gear",
+            description="Create a spur gear with specified number of teeth, module, and parameters",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "documentId": {"type": "string", "description": "Document ID"},
+                    "workspaceId": {"type": "string", "description": "Workspace ID"},
+                    "elementId": {"type": "string", "description": "Part Studio element ID"},
+                    "name": {"type": "string", "description": "Gear name", "default": "Gear"},
+                    "numTeeth": {
+                        "type": "integer",
+                        "description": "Number of teeth on the gear",
+                        "default": 20,
+                    },
+                    "module": {
+                        "type": "number",
+                        "description": "Module (tooth size) in millimeters. Common values: 1.0, 1.5, 2.0, 2.5, 3.0",
+                        "default": 1.0,
+                    },
+                    "pressureAngle": {
+                        "type": "number",
+                        "description": "Pressure angle in degrees (14.5, 20, or 25). Standard is 20.",
+                        "default": 20.0,
+                    },
+                    "thickness": {
+                        "type": "number",
+                        "description": "Gear thickness in inches",
+                        "default": 0.5,
+                    },
+                    "boreDiameter": {
+                        "type": "number",
+                        "description": "Center bore diameter in inches (0 for no bore)",
+                        "default": 0.0,
+                    },
+                    "centerX": {
+                        "type": "number",
+                        "description": "X coordinate of gear center in inches",
+                        "default": 0.0,
+                    },
+                    "centerY": {
+                        "type": "number",
+                        "description": "Y coordinate of gear center in inches",
+                        "default": 0.0,
+                    },
+                    "plane": {
+                        "type": "string",
+                        "enum": ["Front", "Top", "Right"],
+                        "description": "Sketch plane",
+                        "default": "Front",
+                    },
+                },
+                "required": ["documentId", "workspaceId", "elementId", "numTeeth", "module", "thickness"],
             },
         ),
         Tool(
@@ -910,6 +1017,157 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                 )
             ]
 
+    elif name == "get_edges":
+        try:
+            result = await edge_query.get_edges(
+                arguments["documentId"], arguments["workspaceId"], arguments["elementId"]
+            )
+
+            if not isinstance(result, dict) or "result" not in result:
+                return [
+                    TextContent(
+                        type="text", text="No edges found or unexpected response format"
+                    )
+                ]
+
+            edges = result.get("result", {}).get("value", [])
+
+            if not edges:
+                return [TextContent(type="text", text="No edges found in Part Studio")]
+
+            # Format edge information
+            edge_info_list = []
+            circular_count = 0
+            for i, edge in enumerate(edges, 1):
+                edge_info = f"**Edge {i}**"
+                if "deterministicId" in edge and edge["deterministicId"]:
+                    edge_info += f"\n  ID: {edge['deterministicId']}"
+                if "geometryType" in edge:
+                    edge_info += f"\n  Type: {edge['geometryType']}"
+                if "radius" in edge:
+                    edge_info += f"\n  Radius: {edge['radius']:.4f} inches"
+                    circular_count += 1
+                edge_info_list.append(edge_info)
+
+            summary = f"Found {len(edges)} edge(s) ({circular_count} circular):\n\n"
+            return [TextContent(type="text", text=summary + "\n\n".join(edge_info_list))]
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"API error getting edges: {e.response.status_code} - {e.response.text[:500]}")
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error getting edges: API returned {e.response.status_code}. Check that the document/workspace/element IDs are valid.",
+                )
+            ]
+        except Exception as e:
+            logger.exception("Unexpected error getting edges")
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error getting edges: {str(e)}",
+                )
+            ]
+
+    elif name == "find_circular_edges":
+        try:
+            edge_ids = await edge_query.find_circular_edges(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                radius=arguments.get("radius"),
+                tolerance=arguments.get("tolerance", 0.001),
+            )
+
+            if not edge_ids:
+                radius_msg = (
+                    f" with radius {arguments['radius']} inches"
+                    if arguments.get("radius")
+                    else ""
+                )
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"No circular edges found{radius_msg}",
+                    )
+                ]
+
+            radius_msg = (
+                f" with radius ~{arguments['radius']} inches" if arguments.get("radius") else ""
+            )
+            edge_list = "\n".join([f"- {edge_id}" for edge_id in edge_ids])
+
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Found {len(edge_ids)} circular edge(s){radius_msg}:\n\n{edge_list}",
+                )
+            ]
+
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"API error finding circular edges: {e.response.status_code} - {e.response.text[:500]}"
+            )
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error finding circular edges: API returned {e.response.status_code}. Check that the document/workspace/element IDs are valid.",
+                )
+            ]
+        except Exception as e:
+            logger.exception("Unexpected error finding circular edges")
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error finding circular edges: {str(e)}",
+                )
+            ]
+
+    elif name == "find_edges_by_feature":
+        try:
+            edge_ids = await edge_query.find_edges_by_feature(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                arguments["featureId"],
+            )
+
+            if not edge_ids:
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"No edges found for feature '{arguments['featureId']}'",
+                    )
+                ]
+
+            edge_list = "\n".join([f"- {edge_id}" for edge_id in edge_ids])
+
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Found {len(edge_ids)} edge(s) created by feature '{arguments['featureId']}':\n\n{edge_list}",
+                )
+            ]
+
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"API error finding edges by feature: {e.response.status_code} - {e.response.text[:500]}"
+            )
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error finding edges by feature: API returned {e.response.status_code}. Check that the IDs are valid.",
+                )
+            ]
+        except Exception as e:
+            logger.exception("Unexpected error finding edges by feature")
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error finding edges by feature: {str(e)}",
+                )
+            ]
+
     elif name == "create_extrude":
         try:
             # Build extrude
@@ -1118,6 +1376,207 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                 TextContent(
                     type="text",
                     text=f"Error creating thicken: {str(e)}\n\nPlease check the parameters and try again.",
+                )
+            ]
+
+    elif name == "create_gear":
+        try:
+            # Get the plane name and resolve its ID
+            plane_name = arguments.get("plane", "Front")
+            plane = SketchPlane[plane_name.upper()]
+
+            # Resolve the plane ID from Onshape
+            plane_id = await partstudio_manager.get_plane_id(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                plane_name,
+            )
+
+            # Create gear builder
+            gear = GearBuilder(
+                name=arguments.get("name", "Gear"),
+                plane=plane_name,
+                plane_id=plane_id,
+                num_teeth=arguments["numTeeth"],
+                module=arguments["module"],
+                pressure_angle=arguments.get("pressureAngle", 20.0),
+                thickness=arguments["thickness"],
+                bore_diameter=arguments.get("boreDiameter", 0.0),
+            )
+
+            # Set center position
+            gear.set_center(
+                arguments.get("centerX", 0.0),
+                arguments.get("centerY", 0.0),
+            )
+
+            # Calculate gear info for the user
+            pitch_diameter = gear.calculate_pitch_diameter()
+
+            # Create a sketch with the gear profile
+            sketch = SketchBuilder(
+                name=f"{arguments.get('name', 'Gear')} Profile", plane=plane, plane_id=plane_id
+            )
+
+            # Generate actual involute gear teeth
+            import math
+
+            num_teeth = arguments["numTeeth"]
+            module_mm = arguments["module"]
+            pressure_angle_deg = arguments.get("pressureAngle", 20.0)
+            center_x = arguments.get("centerX", 0.0)
+            center_y = arguments.get("centerY", 0.0)
+
+            # Calculate gear dimensions (all in inches)
+            pressure_angle_rad = math.radians(pressure_angle_deg)
+            pitch_radius = pitch_diameter / 2
+            addendum = (module_mm / 25.4) * 1.0  # Standard addendum = 1 module
+            dedendum = (module_mm / 25.4) * 1.25  # Standard dedendum = 1.25 module
+            outer_radius = pitch_radius + addendum
+            root_radius = pitch_radius - dedendum
+            base_radius = pitch_radius * math.cos(pressure_angle_rad)
+
+            # Generate involute gear tooth profile
+            def involute_point(base_r, t):
+                """Generate a point on an involute curve."""
+                x = base_r * (math.cos(t) + t * math.sin(t))
+                y = base_r * (math.sin(t) - t * math.cos(t))
+                return x, y
+
+            # Angle per tooth
+            tooth_angle = 2 * math.pi / num_teeth
+
+            # For each tooth, generate the profile
+            for tooth_idx in range(num_teeth):
+                tooth_center_angle = tooth_idx * tooth_angle
+
+                # Generate involute curve points (right side of tooth)
+                # Calculate the angle at which involute reaches outer radius
+                if base_radius > 0 and outer_radius > base_radius:
+                    max_t = math.sqrt((outer_radius / base_radius) ** 2 - 1)
+                    pitch_t = math.sqrt((pitch_radius / base_radius) ** 2 - 1) if pitch_radius > base_radius else 0
+
+                    # Tooth thickness at pitch circle (half angle)
+                    tooth_half_angle = (math.pi / num_teeth) / 2
+
+                    # Generate points along the involute
+                    num_points = 10
+                    involute_points_right = []
+                    for i in range(num_points + 1):
+                        t = pitch_t + (max_t - pitch_t) * i / num_points
+                        ix, iy = involute_point(base_radius, t)
+                        # Rotate to position
+                        angle = tooth_center_angle + tooth_half_angle
+                        px = center_x + ix * math.cos(angle) - iy * math.sin(angle)
+                        py = center_y + ix * math.sin(angle) + iy * math.cos(angle)
+                        involute_points_right.append((px, py))
+
+                    # Generate left side (mirrored)
+                    involute_points_left = []
+                    for i in range(num_points + 1):
+                        t = pitch_t + (max_t - pitch_t) * i / num_points
+                        ix, iy = involute_point(base_radius, t)
+                        # Mirror across tooth center line
+                        ix = -ix
+                        # Rotate to position
+                        angle = tooth_center_angle - tooth_half_angle
+                        px = center_x + ix * math.cos(angle) - iy * math.sin(angle)
+                        py = center_y + ix * math.sin(angle) + iy * math.cos(angle)
+                        involute_points_left.append((px, py))
+
+                    # Draw the right involute curve with line segments
+                    for i in range(len(involute_points_right) - 1):
+                        sketch.add_line(involute_points_right[i], involute_points_right[i + 1])
+
+                    # Draw the left involute curve with line segments
+                    for i in range(len(involute_points_left) - 1):
+                        sketch.add_line(involute_points_left[i], involute_points_left[i + 1])
+
+                    # Connect tip with arc
+                    tip_start = involute_points_right[-1]
+                    tip_end = involute_points_left[-1]
+                    # Use a straight line for simplicity (could use arc)
+                    sketch.add_line(tip_start, tip_end)
+
+                    # Root connection (simplified - straight line at root radius)
+                    root_start = involute_points_left[0]
+                    root_end_angle = tooth_center_angle + tooth_angle / 2 - tooth_half_angle
+                    root_end_x = center_x + root_radius * math.cos(root_end_angle)
+                    root_end_y = center_y + root_radius * math.sin(root_end_angle)
+                    sketch.add_line(root_start, (root_end_x, root_end_y))
+
+                    # Next tooth's root start
+                    next_root_start_angle = tooth_center_angle + tooth_angle / 2 + tooth_half_angle
+                    next_root_start_x = center_x + root_radius * math.cos(next_root_start_angle)
+                    next_root_start_y = center_y + root_radius * math.sin(next_root_start_angle)
+                    sketch.add_line((root_end_x, root_end_y), (next_root_start_x, next_root_start_y))
+                    sketch.add_line((next_root_start_x, next_root_start_y), involute_points_right[0])
+
+            # Add bore if specified
+            if arguments.get("boreDiameter", 0.0) > 0:
+                sketch.add_circle(
+                    center=(center_x, center_y),
+                    radius=arguments["boreDiameter"] / 2,
+                )
+
+            # Add sketch to Part Studio
+            sketch_data = sketch.build()
+            sketch_result = await partstudio_manager.add_feature(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                sketch_data,
+            )
+
+            sketch_feature_id = sketch_result.get("feature", {}).get("featureId", "unknown")
+
+            # Create extrude for the gear
+            extrude = ExtrudeBuilder(
+                name=arguments.get("name", "Gear"),
+                sketch_feature_id=sketch_feature_id,
+                operation_type=ExtrudeType.NEW,
+            )
+            extrude.set_depth(arguments["thickness"])
+
+            # Add extrude to Part Studio
+            extrude_data = extrude.build()
+            extrude_result = await partstudio_manager.add_feature(
+                arguments["documentId"],
+                arguments["workspaceId"],
+                arguments["elementId"],
+                extrude_data,
+            )
+
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Created gear '{arguments.get('name', 'Gear')}' with {arguments['numTeeth']} teeth.\n"
+                    f"Module: {arguments['module']} mm\n"
+                    f"Pitch diameter: {pitch_diameter:.4f} inches\n"
+                    f"Thickness: {arguments['thickness']} inches\n"
+                    f"Pressure angle: {arguments.get('pressureAngle', 20.0)}°\n"
+                    f"Feature ID: {extrude_result.get('featureId', 'unknown')}\n\n"
+                    f"Note: This is a simplified circular gear profile. For involute gear teeth, use Onshape's Gear FeatureScript from the Feature Library.",
+                )
+            ]
+
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"API error creating gear: {e.response.status_code} - {e.response.text[:500]}"
+            )
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error creating gear: API returned {e.response.status_code}. Check parameters and try again.",
+                )
+            ]
+        except Exception as e:
+            logger.exception("Unexpected error creating gear")
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error creating gear: {str(e)}\n\nPlease check the parameters and try again.",
                 )
             ]
 

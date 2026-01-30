@@ -163,3 +163,47 @@ class PartStudioManager:
         plane_id = standard_plane_ids[plane_name]
         self._plane_id_cache[cache_key] = plane_id
         return plane_id
+
+    async def get_body_details(
+        self, document_id: str, workspace_id: str, element_id: str
+    ) -> Dict[str, Any]:
+        """Get detailed body information including topology (edges, faces).
+
+        Args:
+            document_id: Document ID
+            workspace_id: Workspace ID
+            element_id: Part Studio element ID
+
+        Returns:
+            Body details including topology information
+        """
+        path = (
+            f"/api/v6/partstudios/d/{document_id}/w/{workspace_id}/e/{element_id}"
+            "/bodydetails?includeTopology=true"
+        )
+        return await self.client.get(path)
+
+    async def evaluate_feature_script(
+        self,
+        document_id: str,
+        workspace_id: str,
+        element_id: str,
+        script: str,
+    ) -> Dict[str, Any]:
+        """Evaluate a FeatureScript to query geometry.
+
+        Args:
+            document_id: Document ID
+            workspace_id: Workspace ID
+            element_id: Part Studio element ID
+            script: FeatureScript code to evaluate
+
+        Returns:
+            Evaluation result
+        """
+        path = (
+            f"/api/v6/partstudios/d/{document_id}/w/{workspace_id}/e/{element_id}"
+            "/featurescript"
+        )
+        data = {"script": script}
+        return await self.client.post(path, data=data)
