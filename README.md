@@ -2,6 +2,8 @@
 
 Enhanced Model Context Protocol (MCP) server for programmatic CAD modeling with Onshape.
 
+This is a fork from hedless' repository. Shoutout for making the base MCP!
+
 ## Features
 
 This MCP server provides comprehensive programmatic access to Onshape's REST API, enabling:
@@ -30,7 +32,7 @@ This MCP server provides comprehensive programmatic access to Onshape's REST API
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/hedless/onshape-mcp.git
+git clone https://github.com/clarsbyte/onshape-mcp.git
 cd onshape-mcp
 ```
 
